@@ -16,6 +16,15 @@ enum VinylRevealState: Equatable {
     }
 }
 
+/// Track transition animation phase
+enum TrackTransitionPhase: Equatable {
+    case idle           // Normal display
+    case exitingDisc    // Disc sliding back into cover
+    case exitingCover   // Cover sliding out to left
+    case enteringCover  // Cover sliding in from right
+    case enteringDisc   // Disc emerging from cover
+}
+
 /// Spinning vinyl LP with album art label and overlapping cover
 struct AlbumArtView: View {
     let artwork: NSImage?
@@ -23,27 +32,30 @@ struct AlbumArtView: View {
     let isPlaying: Bool
     let labelImage: NSImage?
     let isGeneratingLabel: Bool
-    let trackId: String?  // To detect track changes
+    let trackId: String?
 
     @State private var rotation: Double = 0
     @State private var isAnimating = false
     @State private var revealState: VinylRevealState = .hidden
     @State private var previousTrackId: String?
 
-    // 33 1/3 RPM = 33.333 rotations per minute = 0.556 rotations per second
-    // Full rotation (360°) takes 1.8 seconds
-    private let rotationDuration: Double = 1.8
+    // Track transition animation states
+    @State private var coverOffsetX: CGFloat = 0
+    @State private var coverOpacity: Double = 1.0
+    @State private var transitionPhase: TrackTransitionPhase = .idle
 
-    // Vinyl is slightly smaller than album cover
+    // For crossfade - we store the previous artwork during transition
+    @State private var previousArtwork: NSImage?
+    @State private var showingPreviousArtwork: Bool = false
+
+    private let rotationDuration: Double = 1.8
     private var vinylSize: CGFloat { size * 0.96 }
     private var coverSize: CGFloat { size }
 
-    // Calculate offset based on reveal state
     private var vinylOffset: CGFloat {
         vinylSize * revealState.offsetMultiplier
     }
 
-    // Total width of the composition for centering
     private var totalWidth: CGFloat {
         coverSize + vinylOffset
     }
@@ -58,25 +70,28 @@ struct AlbumArtView: View {
     }
 
     var body: some View {
-        // Container that keeps the composition horizontally centered
         ZStack {
-            // Offset container to center the cover+disc composition
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
 
                 ZStack(alignment: .leading) {
-                    // Spinning vinyl record (behind cover, slides out to the right)
+                    // Spinning vinyl record
                     SpinningVinylView(
-                        artwork: artwork,
+                        artwork: showingPreviousArtwork ? previousArtwork : artwork,
                         labelImage: labelImage,
                         size: vinylSize,
                         rotation: rotation,
                         isGeneratingLabel: isGeneratingLabel
                     )
-                    .offset(x: coverSize * 0.02 + vinylOffset) // Small base offset + animated offset
+                    .offset(x: coverSize * 0.02 + vinylOffset)
 
-                    // Album cover (in front, on the left)
-                    AlbumCoverView(artwork: artwork, size: coverSize)
+                    // Album cover with transition offset
+                    AlbumCoverView(
+                        artwork: showingPreviousArtwork ? previousArtwork : artwork,
+                        size: coverSize
+                    )
+                    .offset(x: coverOffsetX)
+                    .opacity(coverOpacity)
                 }
                 .frame(width: totalWidth, alignment: .leading)
 
@@ -85,8 +100,15 @@ struct AlbumArtView: View {
         }
         .onAppear {
             startRotation()
-            // Animate to partial reveal on appear
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // Initial entry animation
+            coverOffsetX = size * 1.5  // Start off-screen right
+            coverOpacity = 1.0
+
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
+                coverOffsetX = 0
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
                 withAnimation(.spring(response: 0.8, dampingFraction: 0.7)) {
                     revealState = .partial
                 }
@@ -98,27 +120,70 @@ struct AlbumArtView: View {
             }
         }
         .onChange(of: trackId) { newTrackId in
-            // Track changed - animate disc back in, then out again
-            if newTrackId != previousTrackId && previousTrackId != nil {
-                // First, slide disc back in
-                withAnimation(.spring(response: 0.5, dampingFraction: 0.8)) {
-                    revealState = .hidden
-                }
-                // Then slide back out to partial after a delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
-                    withAnimation(.spring(response: 0.8, dampingFraction: 0.7)) {
-                        revealState = .partial
-                    }
-                }
+            guard newTrackId != previousTrackId, previousTrackId != nil else {
+                previousTrackId = newTrackId
+                return
             }
-            previousTrackId = newTrackId
+
+            // Store current artwork for exit animation
+            previousArtwork = artwork
+            showingPreviousArtwork = true
+
+            animateTrackTransition {
+                // After exit animation completes, switch to new artwork
+                showingPreviousArtwork = false
+                previousTrackId = newTrackId
+            }
         }
         .onChange(of: labelImage) { newLabel in
-            // When label becomes available, animate to full reveal
             if newLabel != nil && revealState != .full {
                 withAnimation(.spring(response: 0.6, dampingFraction: 0.75)) {
                     revealState = .full
                 }
+            }
+        }
+    }
+
+    private func animateTrackTransition(completion: @escaping () -> Void) {
+        // Phase 1: Slide disc back into cover
+        transitionPhase = .exitingDisc
+        withAnimation(.easeInOut(duration: 0.35)) {
+            revealState = .hidden
+        }
+
+        // Phase 2: Slide cover out to the left
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            transitionPhase = .exitingCover
+            withAnimation(.easeIn(duration: 0.4)) {
+                coverOffsetX = -size * 1.5
+                coverOpacity = 0.8
+            }
+        }
+
+        // Phase 3: Switch artwork and position cover on right (no animation)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            completion()  // Switch to new artwork
+            coverOffsetX = size * 1.5
+            coverOpacity = 1.0
+            transitionPhase = .enteringCover
+        }
+
+        // Phase 4: Slide cover in from the right
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
+            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+                coverOffsetX = 0
+            }
+        }
+
+        // Phase 5: Slide disc out
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            transitionPhase = .enteringDisc
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.7)) {
+                revealState = .partial
+            }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                transitionPhase = .idle
             }
         }
     }
@@ -147,7 +212,6 @@ struct SpinningVinylView: View {
 
     var body: some View {
         ZStack {
-            // The vinyl disc that actually spins
             VinylDiscView(
                 artwork: artwork,
                 labelImage: labelImage,
@@ -156,7 +220,6 @@ struct SpinningVinylView: View {
             )
             .rotationEffect(.degrees(rotation))
 
-            // Static light reflection overlay (does NOT rotate)
             VinylLightOverlay(size: size)
         }
         .shadow(color: .black.opacity(0.5), radius: size * 0.05, x: 4, y: 8)
@@ -173,15 +236,12 @@ struct VinylDiscView: View {
 
     var body: some View {
         ZStack {
-            // Solid black vinyl base
             Circle()
                 .fill(Color(white: 0.02))
                 .frame(width: size, height: size)
 
-            // Vinyl grooves
             VinylGroovesView(size: size)
 
-            // Center label
             CenterLabelView(
                 artwork: artwork,
                 labelImage: labelImage,
@@ -189,7 +249,6 @@ struct VinylDiscView: View {
                 isGeneratingLabel: isGeneratingLabel
             )
 
-            // Spindle hole
             Circle()
                 .fill(Color.black)
                 .frame(width: size * 0.02, height: size * 0.02)
@@ -204,7 +263,6 @@ struct VinylLightOverlay: View {
 
     var body: some View {
         ZStack {
-            // Main specular highlight - top left
             Ellipse()
                 .fill(
                     RadialGradient(
@@ -223,7 +281,6 @@ struct VinylLightOverlay: View {
                 .offset(x: -size * 0.15, y: -size * 0.2)
                 .blendMode(.screen)
 
-            // Subtle rim light
             Circle()
                 .strokeBorder(
                     AngularGradient(
@@ -259,7 +316,6 @@ struct VinylGroovesView: View {
             let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
             let maxRadius = min(canvasSize.width, canvasSize.height) / 2
 
-            // Draw fine grooves from label edge to outer rim
             for i in stride(from: 0.40, to: 0.97, by: 0.008) {
                 let radius = maxRadius * i
                 let path = Path { p in
@@ -272,7 +328,6 @@ struct VinylGroovesView: View {
                     )
                 }
 
-                // Alternate subtle groove colors
                 let opacity = (Int(i * 1000) % 2 == 0) ? 0.08 : 0.03
                 context.stroke(
                     path,
@@ -298,12 +353,10 @@ struct CenterLabelView: View {
 
     var body: some View {
         ZStack {
-            // Label base
             Circle()
                 .fill(Color(white: 0.1))
                 .frame(width: size, height: size)
 
-            // AI-generated label or album art (show default/artwork while generating)
             if let label = labelImage {
                 Image(nsImage: label)
                     .resizable()
@@ -320,21 +373,17 @@ struct CenterLabelView: View {
                     .saturation(0.85)
                     .brightness(-0.05)
             } else {
-                // Default vintage label
                 DefaultLabelView(size: size)
             }
 
-            // AI generation glow effect - flicker-free Canvas-based
             if isGeneratingLabel && labelImage == nil {
                 LabelGlowRing(size: size * 0.96, phase: glowPhase)
             }
 
-            // Label rim
             Circle()
                 .strokeBorder(Color.black.opacity(0.5), lineWidth: 1.5)
                 .frame(width: size, height: size)
 
-            // Inner spindle ring
             Circle()
                 .strokeBorder(Color.black.opacity(0.6), lineWidth: 1)
                 .frame(width: size * 0.12, height: size * 0.12)
@@ -366,7 +415,6 @@ struct LabelGlowRing: View {
 
     var body: some View {
         ZStack {
-            // Blurred outer glow
             Canvas { context, canvasSize in
                 let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
                 let radius = min(canvasSize.width, canvasSize.height) / 2 - 2
@@ -389,7 +437,6 @@ struct LabelGlowRing: View {
             .frame(width: size, height: size)
             .blur(radius: 2)
 
-            // Sharp inner ring
             Canvas { context, canvasSize in
                 let center = CGPoint(x: canvasSize.width / 2, y: canvasSize.height / 2)
                 let radius = min(canvasSize.width, canvasSize.height) / 2 - 2
@@ -438,7 +485,6 @@ struct DefaultLabelView: View {
 
     var body: some View {
         ZStack {
-            // Classic label background
             Circle()
                 .fill(
                     RadialGradient(
@@ -497,7 +543,6 @@ struct AlbumCoverView: View {
                     )
             }
 
-            // Subtle cover edge
             RoundedRectangle(cornerRadius: 2)
                 .strokeBorder(
                     LinearGradient(
