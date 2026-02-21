@@ -250,7 +250,7 @@ struct SpinningVinylView: View {
             )
             .rotationEffect(.degrees(rotation))
 
-            VinylLightOverlay(size: size)
+            VinylLightOverlay(size: size, rotation: rotation)
         }
         .shadow(color: .black.opacity(0.5), radius: size * 0.05, x: 4, y: 8)
     }
@@ -286,19 +286,30 @@ struct VinylDiscView: View {
     }
 }
 
-// MARK: - Static Light Overlay (doesn't spin)
+// MARK: - Light Overlay (gentle oscillation synced with rotation)
 
 struct VinylLightOverlay: View {
     let size: CGFloat
+    let rotation: Double
+
+    // Oscillation derived from rotation - completes one cycle per rotation
+    private var oscillation: Double {
+        sin(rotation * .pi / 180)  // -1 to 1 over each rotation
+    }
+
+    private var secondaryOscillation: Double {
+        cos(rotation * .pi / 180)  // Phase-shifted oscillation
+    }
 
     var body: some View {
         ZStack {
+            // Main highlight - subtle position oscillation
             Ellipse()
                 .fill(
                     RadialGradient(
                         colors: [
-                            Color.white.opacity(0.18),
-                            Color.white.opacity(0.08),
+                            Color.white.opacity(0.18 + oscillation * 0.04),
+                            Color.white.opacity(0.08 + oscillation * 0.02),
                             Color.white.opacity(0.02),
                             Color.clear
                         ],
@@ -308,9 +319,13 @@ struct VinylLightOverlay: View {
                     )
                 )
                 .frame(width: size * 0.4, height: size * 0.2)
-                .offset(x: -size * 0.15, y: -size * 0.2)
+                .offset(
+                    x: -size * 0.15 + CGFloat(oscillation) * size * 0.02,
+                    y: -size * 0.2 + CGFloat(secondaryOscillation) * size * 0.01
+                )
                 .blendMode(.screen)
 
+            // Edge reflection ring - rotates slowly opposite to create shimmer
             Circle()
                 .strokeBorder(
                     AngularGradient(
@@ -331,6 +346,7 @@ struct VinylLightOverlay: View {
                     lineWidth: 2
                 )
                 .frame(width: size - 2, height: size - 2)
+                .rotationEffect(.degrees(-rotation * 0.1))  // Slow counter-rotation for shimmer
         }
         .allowsHitTesting(false)
     }
