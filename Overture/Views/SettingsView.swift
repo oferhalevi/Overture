@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Settings view for configuring AI provider - Raycast-inspired design
+/// Settings view for configuring AI provider
 struct SettingsView: View {
     @ObservedObject private var config = AIConfiguration.shared
     @State private var apiKeyInput: String = ""
@@ -8,41 +8,62 @@ struct SettingsView: View {
     @State private var isVerifying = false
     @State private var verificationResult: VerificationResult?
     @State private var customChatModel: String = ""
-    @State private var customImageModel: String = ""
     @State private var showCustomChatInput = false
-    @State private var showCustomImageInput = false
 
     enum VerificationResult {
-        case success(String)
+        case success
         case failure(String)
     }
 
-    private let rowBackgroundColor = Color(nsColor: .controlBackgroundColor)
-
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Provider Section
-                settingsSection("Provider") {
-                    settingsRow(label: "Provider") {
-                        Picker("", selection: $config.provider) {
-                            ForEach(AIProvider.allCases, id: \.self) { provider in
-                                Text(provider.rawValue).tag(provider)
-                            }
+        VStack(spacing: 0) {
+            Form {
+                // MARK: - Provider & Connection
+                Section {
+                    Picker("Provider", selection: $config.provider) {
+                        ForEach(AIProvider.allCases, id: \.self) { provider in
+                            Text(provider.rawValue).tag(provider)
                         }
-                        .labelsHidden()
-                        .frame(width: 200)
                     }
 
-                    settingsRow(label: "Endpoint") {
+                    if showCustomChatInput {
+                        HStack {
+                            Text("Model")
+                            Spacer()
+                            TextField("Model name", text: $customChatModel)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 160)
+                                .onSubmit { applyCustomModel() }
+                            Button("Set") { applyCustomModel() }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                        }
+                    } else {
+                        Picker("Model", selection: $config.chatModel) {
+                            ForEach(config.provider.availableChatModels, id: \.self) { model in
+                                Text(shortModelName(model)).tag(model)
+                            }
+                            Divider()
+                            Text("Custom…").tag("__custom__")
+                        }
+                        .onChange(of: config.chatModel) { newValue in
+                            if newValue == "__custom__" {
+                                customChatModel = ""
+                                showCustomChatInput = true
+                                config.chatModel = config.provider.availableChatModels.first ?? ""
+                            }
+                        }
+                    }
+
+                    LabeledContent("Endpoint") {
                         TextField("", text: $config.endpoint)
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 260)
+                            .frame(width: 220)
                     }
 
                     if config.provider.requiresAPIKey {
-                        settingsRow(label: "API Key") {
-                            HStack(spacing: 8) {
+                        LabeledContent("API Key") {
+                            HStack(spacing: 6) {
                                 Group {
                                     if showingAPIKey {
                                         TextField("", text: $apiKeyInput)
@@ -51,213 +72,154 @@ struct SettingsView: View {
                                     }
                                 }
                                 .textFieldStyle(.roundedBorder)
-                                .frame(width: 220)
-                                .onChange(of: apiKeyInput) { newValue in
-                                    config.apiKey = newValue
-                                }
+                                .frame(width: 180)
+                                .onChange(of: apiKeyInput) { config.apiKey = $0 }
 
                                 Button(action: { showingAPIKey.toggle() }) {
                                     Image(systemName: showingAPIKey ? "eye.slash" : "eye")
-                                        .foregroundColor(.secondary)
                                 }
                                 .buttonStyle(.borderless)
+                                .foregroundColor(.secondary)
                             }
                         }
                     }
+                } header: {
+                    Text("Connection")
+                }
 
-                    settingsRow(label: "Connection") {
-                        HStack(spacing: 12) {
-                            if let result = verificationResult {
-                                switch result {
-                                case .success(let message):
-                                    Label(message, systemImage: "checkmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundColor(.green)
-                                case .failure(let message):
-                                    Label(message, systemImage: "xmark.circle.fill")
-                                        .font(.caption)
-                                        .foregroundColor(.red)
-                                        .lineLimit(1)
-                                        .frame(maxWidth: 150)
+                // MARK: - Test Connection
+                Section {
+                    HStack {
+                        connectionStatus
+                        Spacer()
+                        Button(action: verifyConnection) {
+                            Group {
+                                if isVerifying {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Text("Test Connection")
                                 }
                             }
+                            .frame(width: 100)
+                        }
+                        .disabled(isVerifying || (config.provider.requiresAPIKey && apiKeyInput.isEmpty))
+                    }
+                }
 
-                            Button(action: verifyConnection) {
-                                HStack(spacing: 6) {
-                                    if isVerifying {
-                                        ProgressView()
-                                            .controlSize(.small)
-                                            .scaleEffect(0.7)
-                                    }
-                                    Text(isVerifying ? "Verifying..." : "Verify")
+                // MARK: - Image Generation (if supported)
+                if config.provider.supportsImageGeneration {
+                    Section {
+                        Toggle("Enable Image Generation", isOn: $config.imageGenerationEnabled)
+
+                        if config.imageGenerationEnabled {
+                            Picker("Image Model", selection: $config.imageModel) {
+                                ForEach(config.provider.availableImageModels, id: \.self) { model in
+                                    Text(model).tag(model)
                                 }
-                                .frame(width: 80)
                             }
-                            .disabled(isVerifying || (config.provider.requiresAPIKey && apiKeyInput.isEmpty))
                         }
+                    } header: {
+                        Text("Image Generation")
                     }
                 }
 
-                // Models Section
-                settingsSection("Models") {
-                    settingsRow(label: "Chat Model") {
-                        modelPicker(
-                            selection: $config.chatModel,
-                            models: config.provider.availableChatModels,
-                            showCustomInput: $showCustomChatInput,
-                            customValue: $customChatModel
-                        )
+                // MARK: - About
+                Section {
+                    HStack(spacing: 16) {
+                        capabilityBadge("Vision", enabled: config.provider.supportsVision)
+                        capabilityBadge("Images", enabled: config.provider.supportsImageGeneration)
+                        capabilityBadge("Local", enabled: !config.provider.requiresAPIKey)
+                        Spacer()
                     }
+                } header: {
+                    Text("Provider Capabilities")
+                }
 
-                    if config.provider.supportsImageGeneration {
-                        settingsRow(label: "Image Model") {
-                            modelPicker(
-                                selection: $config.imageModel,
-                                models: config.provider.availableImageModels,
-                                showCustomInput: $showCustomImageInput,
-                                customValue: $customImageModel
-                            )
+                // MARK: - Reset
+                Section {
+                    HStack {
+                        Spacer()
+                        Button("Reset to Defaults", role: .destructive) {
+                            config.resetToDefaults()
+                            apiKeyInput = ""
+                            verificationResult = nil
+                            showCustomChatInput = false
                         }
-
-                        settingsRow(label: "Image Generation") {
-                            Toggle("", isOn: $config.imageGenerationEnabled)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                        }
+                        Spacer()
                     }
                 }
-
-                // Capabilities Section
-                settingsSection("Capabilities") {
-                    statusRow(label: "Vision Support", enabled: config.provider.supportsVision)
-                    statusRow(label: "Image Generation", enabled: config.provider.supportsImageGeneration)
-                    statusRow(label: "API Key Required", enabled: config.provider.requiresAPIKey)
-                }
-
-                // Reset
-                HStack {
-                    Spacer()
-                    Button(action: {
-                        config.resetToDefaults()
-                        apiKeyInput = ""
-                        verificationResult = nil
-                    }) {
-                        Text("Reset to Defaults")
-                    }
-                    .foregroundColor(.red)
-                    Spacer()
-                }
-                .padding(.top, 8)
             }
-            .padding(20)
+            .formStyle(.grouped)
         }
-        .frame(width: 450, height: 480)
+        .frame(width: 420, height: 420)
         .onAppear {
             apiKeyInput = config.apiKey
         }
     }
 
-    // MARK: - Components
+    // MARK: - Connection Status
 
-    private func settingsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(title)
-                .font(.headline)
-                .padding(.bottom, 8)
-
-            VStack(spacing: 0) {
-                content()
-            }
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color(nsColor: .controlBackgroundColor))
-            )
-        }
-    }
-
-    private func settingsRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
-        HStack {
-            Text(label)
-                .foregroundColor(.secondary)
-                .frame(width: 120, alignment: .trailing)
-
-            Spacer()
-
-            content()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-    }
-
-    private func statusRow(label: String, enabled: Bool) -> some View {
-        HStack {
-            Text(label)
-                .foregroundColor(.secondary)
-                .frame(width: 120, alignment: .trailing)
-
-            Spacer()
-
-            HStack(spacing: 6) {
-                Circle()
-                    .fill(enabled ? Color.green : Color.gray.opacity(0.4))
-                    .frame(width: 8, height: 8)
-                Text(enabled ? "Yes" : "No")
-                    .foregroundColor(enabled ? .primary : .secondary)
-            }
-            .frame(width: 260, alignment: .leading)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-
-    private func modelPicker(
-        selection: Binding<String>,
-        models: [String],
-        showCustomInput: Binding<Bool>,
-        customValue: Binding<String>
-    ) -> some View {
-        Group {
-            if showCustomInput.wrappedValue {
-                HStack(spacing: 8) {
-                    TextField("Enter model name", text: customValue)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 180)
-                        .onSubmit {
-                            if !customValue.wrappedValue.isEmpty {
-                                selection.wrappedValue = customValue.wrappedValue
-                            }
-                            showCustomInput.wrappedValue = false
-                        }
-
-                    Button("Done") {
-                        if !customValue.wrappedValue.isEmpty {
-                            selection.wrappedValue = customValue.wrappedValue
-                        }
-                        showCustomInput.wrappedValue = false
-                    }
-                    .controlSize(.small)
-                }
+    @ViewBuilder
+    private var connectionStatus: some View {
+        switch verificationResult {
+        case .success:
+            Label("Connected", systemImage: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.callout)
+        case .failure(let error):
+            Label(error, systemImage: "xmark.circle.fill")
+                .foregroundColor(.red)
+                .font(.callout)
+                .lineLimit(1)
+        case nil:
+            if config.isConfigured {
+                Label("Ready", systemImage: "circle.fill")
+                    .foregroundColor(.secondary)
+                    .font(.callout)
             } else {
-                Picker("", selection: selection) {
-                    ForEach(models, id: \.self) { model in
-                        Text(model).tag(model)
-                    }
-                    Divider()
-                    Text("Custom...").tag("__custom__")
-                }
-                .labelsHidden()
-                .frame(width: 260)
-                .onChange(of: selection.wrappedValue) { newValue in
-                    if newValue == "__custom__" {
-                        customValue.wrappedValue = ""
-                        showCustomInput.wrappedValue = true
-                        if let first = models.first {
-                            selection.wrappedValue = first
-                        }
-                    }
-                }
+                Label("Not configured", systemImage: "exclamationmark.circle.fill")
+                    .foregroundColor(.orange)
+                    .font(.callout)
             }
         }
+    }
+
+    // MARK: - Capability Badge
+
+    private func capabilityBadge(_ label: String, enabled: Bool) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: enabled ? "checkmark" : "xmark")
+                .font(.system(size: 9, weight: .bold))
+            Text(label)
+                .font(.caption)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(enabled ? Color.green.opacity(0.15) : Color.secondary.opacity(0.1))
+        )
+        .foregroundColor(enabled ? .green : .secondary)
+    }
+
+    // MARK: - Helpers
+
+    private func shortModelName(_ model: String) -> String {
+        // Shorten long model names for display
+        model
+            .replacingOccurrences(of: "anthropic/", with: "")
+            .replacingOccurrences(of: "openai/", with: "")
+            .replacingOccurrences(of: "google/", with: "")
+            .replacingOccurrences(of: "meta-llama/", with: "")
+    }
+
+    private func applyCustomModel() {
+        if !customChatModel.isEmpty {
+            config.chatModel = customChatModel
+        }
+        showCustomChatInput = false
     }
 
     // MARK: - Verify Connection
@@ -269,19 +231,14 @@ struct SettingsView: View {
         Task {
             do {
                 let aiService = AIService()
-                let response = try await aiService.chatCompletion(
-                    prompt: "Say 'OK' and nothing else.",
-                    maxTokens: 10,
+                _ = try await aiService.chatCompletion(
+                    prompt: "Say OK",
+                    maxTokens: 5,
                     temperature: 0
                 )
-
                 await MainActor.run {
                     isVerifying = false
-                    if response.lowercased().contains("ok") {
-                        verificationResult = .success("Connected!")
-                    } else {
-                        verificationResult = .success("Connected")
-                    }
+                    verificationResult = .success
                 }
             } catch let error as AIServiceError {
                 await MainActor.run {
@@ -289,14 +246,16 @@ struct SettingsView: View {
                     switch error {
                     case .apiError(let code, _):
                         verificationResult = .failure("Error \(code)")
+                    case .missingAPIKey:
+                        verificationResult = .failure("Missing API key")
                     default:
-                        verificationResult = .failure(error.localizedDescription)
+                        verificationResult = .failure("Failed")
                     }
                 }
             } catch {
                 await MainActor.run {
                     isVerifying = false
-                    verificationResult = .failure("Failed")
+                    verificationResult = .failure("Connection failed")
                 }
             }
         }
