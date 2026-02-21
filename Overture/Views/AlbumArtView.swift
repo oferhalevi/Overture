@@ -74,26 +74,27 @@ struct AlbumArtView: View {
             HStack(spacing: 0) {
                 Spacer(minLength: 0)
 
+                // The entire disc+cover unit moves together during transitions
                 ZStack(alignment: .leading) {
                     // Spinning vinyl record
                     SpinningVinylView(
                         artwork: showingPreviousArtwork ? previousArtwork : artwork,
-                        labelImage: labelImage,
+                        labelImage: showingPreviousArtwork ? nil : labelImage,
                         size: vinylSize,
                         rotation: rotation,
-                        isGeneratingLabel: isGeneratingLabel
+                        isGeneratingLabel: showingPreviousArtwork ? false : isGeneratingLabel
                     )
                     .offset(x: coverSize * 0.02 + vinylOffset)
 
-                    // Album cover with transition offset
+                    // Album cover
                     AlbumCoverView(
                         artwork: showingPreviousArtwork ? previousArtwork : artwork,
                         size: coverSize
                     )
-                    .offset(x: coverOffsetX)
-                    .opacity(coverOpacity)
                 }
                 .frame(width: totalWidth, alignment: .leading)
+                .offset(x: coverOffsetX)  // Move entire unit together
+                .opacity(coverOpacity)
 
                 Spacer(minLength: 0)
             }
@@ -145,44 +146,37 @@ struct AlbumArtView: View {
     }
 
     private func animateTrackTransition(completion: @escaping () -> Void) {
-        // Phase 1: Slide disc back into cover
-        transitionPhase = .exitingDisc
-        withAnimation(.easeInOut(duration: 0.35)) {
-            revealState = .hidden
+        // Phase 1: Slide entire unit (disc + cover) out to the left
+        transitionPhase = .exitingCover
+        withAnimation(.easeIn(duration: 0.45)) {
+            coverOffsetX = -size * 1.8
+            coverOpacity = 0.0
         }
 
-        // Phase 2: Slide cover out to the left
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            transitionPhase = .exitingCover
-            withAnimation(.easeIn(duration: 0.4)) {
-                coverOffsetX = -size * 1.5
-                coverOpacity = 0.8
-            }
-        }
-
-        // Phase 3: Switch artwork and position cover on right (no animation)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+        // Phase 2: Switch artwork and position unit on right (no animation)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
             completion()  // Switch to new artwork
+            revealState = .hidden  // Reset disc to hidden for new track
             coverOffsetX = size * 1.5
             coverOpacity = 1.0
             transitionPhase = .enteringCover
         }
 
-        // Phase 4: Slide cover in from the right
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) {
-            withAnimation(.spring(response: 0.55, dampingFraction: 0.8)) {
+        // Phase 3: Slide entire unit in from the right
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                 coverOffsetX = 0
             }
         }
 
-        // Phase 5: Slide disc out
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+        // Phase 4: Slide disc out from cover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
             transitionPhase = .enteringDisc
-            withAnimation(.spring(response: 0.7, dampingFraction: 0.7)) {
+            withAnimation(.spring(response: 0.8, dampingFraction: 0.7)) {
                 revealState = .partial
             }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 transitionPhase = .idle
             }
         }
