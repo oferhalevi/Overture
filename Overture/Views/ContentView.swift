@@ -127,6 +127,12 @@ struct ContentView: View {
                         showTrackInfo = true
                         showFacts = true
                     }
+                },
+                onTap: {
+                    appState.playPause()
+                },
+                onDoubleTap: {
+                    appState.nextTrack()
                 }
             )
 

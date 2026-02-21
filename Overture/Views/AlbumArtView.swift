@@ -38,6 +38,10 @@ struct AlbumArtView: View {
     var onTransitionStart: (() -> Void)?
     // Callback when transition ends - parent can show new text
     var onTransitionEnd: (() -> Void)?
+    // Callback for single tap (play/pause)
+    var onTap: (() -> Void)?
+    // Callback for double tap (next track)
+    var onDoubleTap: (() -> Void)?
 
     @State private var rotation: Double = 0
     @State private var currentRPM: Double = 0  // Current RPM (animates 0 to 33.33)
@@ -67,7 +71,7 @@ struct AlbumArtView: View {
         coverSize + vinylOffset
     }
 
-    init(artwork: NSImage?, size: CGFloat, isPlaying: Bool, labelImage: NSImage? = nil, isGeneratingLabel: Bool = false, trackId: String? = nil, onTransitionStart: (() -> Void)? = nil, onTransitionEnd: (() -> Void)? = nil) {
+    init(artwork: NSImage?, size: CGFloat, isPlaying: Bool, labelImage: NSImage? = nil, isGeneratingLabel: Bool = false, trackId: String? = nil, onTransitionStart: (() -> Void)? = nil, onTransitionEnd: (() -> Void)? = nil, onTap: (() -> Void)? = nil, onDoubleTap: (() -> Void)? = nil) {
         self.artwork = artwork
         self.size = size
         self.isPlaying = isPlaying
@@ -76,6 +80,8 @@ struct AlbumArtView: View {
         self.trackId = trackId
         self.onTransitionStart = onTransitionStart
         self.onTransitionEnd = onTransitionEnd
+        self.onTap = onTap
+        self.onDoubleTap = onDoubleTap
     }
 
     var body: some View {
@@ -105,6 +111,12 @@ struct AlbumArtView: View {
                 .frame(width: totalWidth, alignment: .leading)
                 .offset(x: coverOffsetX)  // Move entire unit together
                 .opacity(coverOpacity)
+                .onTapGesture(count: 2) {
+                    onDoubleTap?()
+                }
+                .onTapGesture(count: 1) {
+                    onTap?()
+                }
 
                 Spacer(minLength: 0)
             }

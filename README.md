@@ -13,6 +13,24 @@ A calm, educational music companion for macOS that displays Spotify now-playing 
 - **AI-Generated Insights** - Lyrics analysis, artist background, album context
 - **Vinyl Label Generation** - AI-generated or real labels from Discogs
 - **Ambient UI** - Smooth animations and color transitions
+- **Playback Controls** - Keyboard and mouse shortcuts for play/pause and track navigation
+
+## Controls
+
+### Keyboard
+
+| Key | Action |
+|-----|--------|
+| `Space` | Play / Pause |
+| `←` | Previous track |
+| `→` | Next track |
+
+### Mouse
+
+| Action | Effect |
+|--------|--------|
+| Single click on record | Play / Pause |
+| Double click on record | Next track |
 
 ## Screenshots
 
