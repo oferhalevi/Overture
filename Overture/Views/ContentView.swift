@@ -100,6 +100,10 @@ struct ContentView: View {
         switch event.keyCode {
         case 49:  // Spacebar
             appState.playPause()
+        case 53:  // Escape - exit full screen
+            if let window = NSApp.keyWindow, window.styleMask.contains(.fullScreen) {
+                window.toggleFullScreen(nil)
+            }
         case 123:  // Left arrow
             appState.previousTrack()
         case 124:  // Right arrow

@@ -24,6 +24,7 @@ A calm, educational music companion for macOS that displays Spotify now-playing 
 | `Space` | Play / Pause |
 | `←` | Previous track |
 | `→` | Next track |
+| `Esc` | Exit full screen |
 
 ### Mouse
 
