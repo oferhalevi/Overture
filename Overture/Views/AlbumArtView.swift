@@ -40,10 +40,10 @@ struct AlbumArtView: View {
     var onTransitionEnd: (() -> Void)?
 
     @State private var rotation: Double = 0
-    @State private var rotationSpeed: Double = 1.0  // For spin down effect
-    @State private var isAnimating = false
+    @State private var currentRPM: Double = 0  // Current RPM (animates 0 to 33.33)
     @State private var revealState: VinylRevealState = .hidden
     @State private var previousTrackId: String?
+    @State private var displayLink: Timer?
 
     // Track transition animation states
     @State private var coverOffsetX: CGFloat = 0
@@ -54,7 +54,8 @@ struct AlbumArtView: View {
     @State private var previousArtwork: NSImage?
     @State private var showingPreviousArtwork: Bool = false
 
-    private let rotationDuration: Double = 1.8
+    // 33 1/3 RPM
+    private let targetRPM: Double = 33.333
     private var vinylSize: CGFloat { size * 0.96 }
     private var coverSize: CGFloat { size }
 
@@ -109,7 +110,11 @@ struct AlbumArtView: View {
             }
         }
         .onAppear {
-            startRotation()
+            startDisplayLink()
+            // Spin up if playing
+            if isPlaying {
+                spinUp()
+            }
             // Initial entry animation
             coverOffsetX = size * 1.5  // Start off-screen right
             coverOpacity = 1.0
@@ -124,13 +129,14 @@ struct AlbumArtView: View {
                 }
             }
         }
+        .onDisappear {
+            stopDisplayLink()
+        }
         .onChange(of: isPlaying) { playing in
             if playing {
-                if !isAnimating {
-                    startRotation()
-                }
+                spinUp()
             } else {
-                pauseRotation()
+                spinDown()
             }
         }
         .onChange(of: trackId) { newTrackId in
@@ -158,13 +164,44 @@ struct AlbumArtView: View {
         }
     }
 
+    // MARK: - Rotation Control
+
+    private func startDisplayLink() {
+        // 60 FPS timer to update rotation
+        displayLink = Timer.scheduledTimer(withTimeInterval: 1.0/60.0, repeats: true) { _ in
+            // Degrees per frame = (RPM / 60 seconds) * 360 degrees / 60 FPS
+            let degreesPerFrame = (currentRPM / 60.0) * 360.0 / 60.0
+            rotation += degreesPerFrame
+            if rotation >= 360 {
+                rotation -= 360
+            }
+        }
+    }
+
+    private func stopDisplayLink() {
+        displayLink?.invalidate()
+        displayLink = nil
+    }
+
+    private func spinUp() {
+        withAnimation(.easeIn(duration: 0.8)) {
+            currentRPM = targetRPM
+        }
+    }
+
+    private func spinDown() {
+        withAnimation(.easeOut(duration: 1.2)) {
+            currentRPM = 0
+        }
+    }
+
     private func animateTrackTransition(completion: @escaping () -> Void) {
         // Phase 0: Notify parent to hide text first
         transitionPhase = .exitingDisc
         onTransitionStart?()
 
-        // Phase 1: Spin down the disc (slow to stop) - happens concurrently with text fade
-        stopRotation()
+        // Phase 1: Spin down the disc
+        spinDown()
 
         // Phase 2: After text has faded, slide disc back into cover
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
@@ -185,6 +222,7 @@ struct AlbumArtView: View {
         // Phase 4: Switch artwork and position unit on right (no animation)
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
             completion()  // Switch to new artwork
+            rotation = 0  // Reset rotation for new track
             coverOffsetX = size * 1.5
             coverOpacity = 1.0
             transitionPhase = .enteringCover
@@ -197,50 +235,22 @@ struct AlbumArtView: View {
             }
         }
 
-        // Phase 6: Slide disc out from cover
+        // Phase 6: Slide disc out from cover and spin up
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
             transitionPhase = .enteringDisc
             withAnimation(.spring(response: 0.8, dampingFraction: 0.7)) {
                 revealState = .partial
             }
-            // Restart rotation
-            startRotation()
+            // Spin up if playing
+            if isPlaying {
+                spinUp()
+            }
         }
 
         // Phase 7: Notify parent transition is complete
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             transitionPhase = .idle
             onTransitionEnd?()
-        }
-    }
-
-    private func stopRotation() {
-        // Stop the repeating animation by resetting
-        isAnimating = false
-        withAnimation(.easeOut(duration: 0.5)) {
-            // The rotation will coast to a stop
-        }
-    }
-
-    private func pauseRotation() {
-        // Pause rotation - keep current position
-        isAnimating = false
-        // Cancel the animation by setting rotation to its current value
-        withAnimation(.easeOut(duration: 0.8)) {
-            // SwiftUI will animate to current value, effectively stopping
-        }
-    }
-
-    private func startRotation() {
-        guard !isAnimating else { return }
-        isAnimating = true
-
-        // Always animate from current rotation to 360, then repeat
-        withAnimation(
-            .linear(duration: rotationDuration)
-            .repeatForever(autoreverses: false)
-        ) {
-            rotation = rotation < 360 ? 360 : 720
         }
     }
 }
