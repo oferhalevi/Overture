@@ -51,9 +51,14 @@ class AppState: ObservableObject {
             Task { @MainActor in
                 guard let self = self else { return }
 
+                // Always update currentTrack immediately so that
+                // handleTrackChange guards see the correct value
+                // (the Combine binding delivers asynchronously and
+                // may not have propagated yet).
+                self.currentTrack = track
+
                 // Skip if we're already processing this track
                 if track.id == self.lastProcessedTrackId {
-                    self.currentTrack = track
                     return
                 }
 
@@ -153,6 +158,8 @@ class AppState: ObservableObject {
         // Check for cancellation
         if Task.isCancelled {
             print("Task cancelled after artwork")
+            isLoading = false
+            llmActivity = nil
             return
         }
 
@@ -185,6 +192,8 @@ class AppState: ObservableObject {
             // Check if track changed
             guard track.id == currentTrack?.id else {
                 print("Track changed during fetch")
+                isLoading = false
+                llmActivity = nil
                 return
             }
 
