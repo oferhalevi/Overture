@@ -43,21 +43,37 @@ struct ArtworkColors: Equatable {
         // Calculate luminance of primary background color
         let primaryLuminance = colors[0].luminance
 
-        // Determine if background is dark or light
-        // Use a threshold that accounts for mid-tones
-        self.isDark = primaryLuminance < 0.45
+        // Calculate contrast ratios for both white and black text
+        let whiteContrast = ArtworkColors.contrastRatio(l1: primaryLuminance, l2: 1.0)
+        let blackContrast = ArtworkColors.contrastRatio(l1: primaryLuminance, l2: 0.0)
 
-        // Calculate text colors ensuring WCAG AA contrast (4.5:1 minimum)
-        if isDark {
-            // Dark background - use white text
-            self.textColor = .white
-            self.textColorSecondary = Color.white.opacity(0.75)
+        // Pick whichever has better contrast
+        // WCAG AA requires 4.5:1 for normal text, 3:1 for large text
+        let useWhiteText = whiteContrast >= blackContrast
+
+        self.isDark = useWhiteText
+
+        if useWhiteText {
+            // Check if we need to boost contrast for mid-tone backgrounds
+            if whiteContrast < 4.5 {
+                // Mid-tone background - use pure white with higher opacity for secondary
+                self.textColor = .white
+                self.textColorSecondary = Color.white.opacity(0.9)
+            } else {
+                self.textColor = .white
+                self.textColorSecondary = Color.white.opacity(0.75)
+            }
             self.cardBackground = Color.white.opacity(0.08)
         } else {
-            // Light background - use black text
-            // For very light backgrounds (white, cream, light grey), ensure strong contrast
-            self.textColor = Color(red: 0.05, green: 0.05, blue: 0.05)
-            self.textColorSecondary = Color(red: 0.05, green: 0.05, blue: 0.05).opacity(0.7)
+            // Check if we need to boost contrast for mid-tone backgrounds
+            if blackContrast < 4.5 {
+                // Mid-tone background - use pure black
+                self.textColor = .black
+                self.textColorSecondary = Color.black.opacity(0.85)
+            } else {
+                self.textColor = Color(red: 0.05, green: 0.05, blue: 0.05)
+                self.textColorSecondary = Color(red: 0.05, green: 0.05, blue: 0.05).opacity(0.7)
+            }
             self.cardBackground = Color.black.opacity(0.06)
         }
     }
