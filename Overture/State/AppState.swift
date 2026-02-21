@@ -21,6 +21,7 @@ class AppState: ObservableObject {
     // MARK: - Services
 
     private let spotifyService = SpotifyPollingService()
+    private let spotifyBridge = SpotifyAppleScriptBridge()
     private let artworkService = ArtworkService()
     private let discogsService = DiscogsService()
     private let wikipediaService = WikipediaAPIService()
@@ -73,6 +74,38 @@ class AppState: ObservableObject {
         spotifyService.stopPolling()
         currentWorkTask?.cancel()
         labelTask?.cancel()
+    }
+
+    // MARK: - Playback Controls
+
+    func playPause() {
+        Task {
+            do {
+                try await spotifyBridge.playPause()
+            } catch {
+                print("Play/pause error: \(error)")
+            }
+        }
+    }
+
+    func nextTrack() {
+        Task {
+            do {
+                try await spotifyBridge.nextTrack()
+            } catch {
+                print("Next track error: \(error)")
+            }
+        }
+    }
+
+    func previousTrack() {
+        Task {
+            do {
+                try await spotifyBridge.previousTrack()
+            } catch {
+                print("Previous track error: \(error)")
+            }
+        }
     }
 
     // MARK: - Private Methods

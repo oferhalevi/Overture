@@ -125,8 +125,12 @@ struct AlbumArtView: View {
             }
         }
         .onChange(of: isPlaying) { playing in
-            if playing && !isAnimating {
-                startRotation()
+            if playing {
+                if !isAnimating {
+                    startRotation()
+                }
+            } else {
+                pauseRotation()
             }
         }
         .onChange(of: trackId) { newTrackId in
@@ -218,15 +222,25 @@ struct AlbumArtView: View {
         }
     }
 
+    private func pauseRotation() {
+        // Pause rotation - keep current position
+        isAnimating = false
+        // Cancel the animation by setting rotation to its current value
+        withAnimation(.easeOut(duration: 0.8)) {
+            // SwiftUI will animate to current value, effectively stopping
+        }
+    }
+
     private func startRotation() {
         guard !isAnimating else { return }
         isAnimating = true
 
+        // Always animate from current rotation to 360, then repeat
         withAnimation(
             .linear(duration: rotationDuration)
             .repeatForever(autoreverses: false)
         ) {
-            rotation = 360
+            rotation = rotation < 360 ? 360 : 720
         }
     }
 }

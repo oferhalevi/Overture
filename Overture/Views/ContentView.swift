@@ -79,6 +79,24 @@ struct ContentView: View {
         .onDisappear {
             appState.stop()
         }
+        .background(KeyboardHandlerView { event in
+            handleKeyPress(event)
+        })
+    }
+
+    // MARK: - Keyboard Handling
+
+    private func handleKeyPress(_ event: NSEvent) {
+        switch event.keyCode {
+        case 49:  // Spacebar
+            appState.playPause()
+        case 123:  // Left arrow
+            appState.previousTrack()
+        case 124:  // Right arrow
+            appState.nextTrack()
+        default:
+            break
+        }
     }
 
     // MARK: - Album Row: Vinyl + Track Info
@@ -701,6 +719,37 @@ struct ConnectionOverlayView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.black.opacity(0.7))
+    }
+}
+
+// MARK: - Keyboard Handler
+
+struct KeyboardHandlerView: NSViewRepresentable {
+    let onKeyPress: (NSEvent) -> Void
+
+    func makeNSView(context: Context) -> KeyboardNSView {
+        let view = KeyboardNSView()
+        view.onKeyPress = onKeyPress
+        return view
+    }
+
+    func updateNSView(_ nsView: KeyboardNSView, context: Context) {
+        nsView.onKeyPress = onKeyPress
+    }
+}
+
+class KeyboardNSView: NSView {
+    var onKeyPress: ((NSEvent) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.makeFirstResponder(self)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        onKeyPress?(event)
     }
 }
 

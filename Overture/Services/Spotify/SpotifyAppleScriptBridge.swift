@@ -105,4 +105,48 @@ actor SpotifyAppleScriptBridge {
             }
         }
     }
+
+    // MARK: - Playback Controls
+
+    /// Toggle play/pause
+    func playPause() async throws {
+        guard await isSpotifyRunning() else {
+            throw SpotifyError.notRunning
+        }
+
+        let script = """
+        tell application "Spotify"
+            playpause
+        end tell
+        """
+        _ = try await runAppleScript(script)
+    }
+
+    /// Skip to next track
+    func nextTrack() async throws {
+        guard await isSpotifyRunning() else {
+            throw SpotifyError.notRunning
+        }
+
+        let script = """
+        tell application "Spotify"
+            next track
+        end tell
+        """
+        _ = try await runAppleScript(script)
+    }
+
+    /// Go to previous track
+    func previousTrack() async throws {
+        guard await isSpotifyRunning() else {
+            throw SpotifyError.notRunning
+        }
+
+        let script = """
+        tell application "Spotify"
+            previous track
+        end tell
+        """
+        _ = try await runAppleScript(script)
+    }
 }
