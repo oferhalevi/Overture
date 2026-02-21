@@ -76,6 +76,46 @@ enum AIProvider: String, CaseIterable, Codable {
             return ""
         }
     }
+
+    var availableChatModels: [String] {
+        switch self {
+        case .openAI:
+            return ["gpt-4o", "gpt-4o-mini", "gpt-4-turbo", "gpt-4", "gpt-3.5-turbo"]
+        case .anthropic:
+            return [
+                "claude-sonnet-4-20250514",
+                "claude-3-5-sonnet-20241022",
+                "claude-3-5-haiku-20241022",
+                "claude-3-haiku-20240307",
+                "claude-3-opus-20240229"
+            ]
+        case .openRouter:
+            return [
+                "anthropic/claude-sonnet-4",
+                "anthropic/claude-3.5-sonnet",
+                "anthropic/claude-3-haiku",
+                "openai/gpt-4o",
+                "openai/gpt-4o-mini",
+                "google/gemini-pro-1.5",
+                "meta-llama/llama-3.1-70b-instruct"
+            ]
+        case .ollama:
+            return ["llama3.2", "llama3.1", "llama3", "mistral", "mixtral", "phi3", "gemma2"]
+        case .custom:
+            return ["gpt-4.1-mini", "gpt-4.1", "gpt-4o", "gpt-4o-mini"]
+        }
+    }
+
+    var availableImageModels: [String] {
+        switch self {
+        case .openAI:
+            return ["dall-e-3", "dall-e-2"]
+        case .custom:
+            return ["gpt-image-1", "dall-e-3"]
+        default:
+            return []
+        }
+    }
 }
 
 /// Configuration for AI services
