@@ -11,245 +11,189 @@ struct SettingsView: View {
     @State private var customImageModel: String = ""
     @State private var showCustomChatInput = false
     @State private var showCustomImageInput = false
-    @Environment(\.dismiss) private var dismiss
 
     enum VerificationResult {
         case success(String)
         case failure(String)
     }
 
-    private let backgroundColor = Color(red: 0.11, green: 0.11, blue: 0.12)
-    private let rowBackgroundColor = Color(red: 0.18, green: 0.18, blue: 0.19)
-    private let separatorColor = Color(white: 0.25)
+    private let rowBackgroundColor = Color(nsColor: .controlBackgroundColor)
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Title bar
-            titleBar
-
-            // Content
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Provider Section
-                    settingsSection {
-                        settingsRow(label: "Provider") {
-                            Picker("", selection: $config.provider) {
-                                ForEach(AIProvider.allCases, id: \.self) { provider in
-                                    Text(provider.rawValue).tag(provider)
-                                }
+        ScrollView {
+            VStack(spacing: 24) {
+                // Provider Section
+                settingsSection("Provider") {
+                    settingsRow(label: "Provider") {
+                        Picker("", selection: $config.provider) {
+                            ForEach(AIProvider.allCases, id: \.self) { provider in
+                                Text(provider.rawValue).tag(provider)
                             }
-                            .labelsHidden()
-                            .frame(width: 280)
                         }
+                        .labelsHidden()
+                        .frame(width: 200)
+                    }
 
-                        settingsRow(label: "Endpoint") {
-                            TextField("", text: $config.endpoint)
-                                .textFieldStyle(.plain)
-                                .frame(width: 280)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 8)
-                                .background(rowBackgroundColor)
-                                .cornerRadius(6)
-                        }
+                    settingsRow(label: "Endpoint") {
+                        TextField("", text: $config.endpoint)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 260)
+                    }
 
-                        if config.provider.requiresAPIKey {
-                            settingsRow(label: "API Key") {
-                                HStack(spacing: 8) {
-                                    Group {
-                                        if showingAPIKey {
-                                            TextField("", text: $apiKeyInput)
-                                        } else {
-                                            SecureField("", text: $apiKeyInput)
-                                        }
+                    if config.provider.requiresAPIKey {
+                        settingsRow(label: "API Key") {
+                            HStack(spacing: 8) {
+                                Group {
+                                    if showingAPIKey {
+                                        TextField("", text: $apiKeyInput)
+                                    } else {
+                                        SecureField("", text: $apiKeyInput)
                                     }
-                                    .textFieldStyle(.plain)
-                                    .frame(width: 230)
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 8)
-                                    .background(rowBackgroundColor)
-                                    .cornerRadius(6)
-                                    .onChange(of: apiKeyInput) { newValue in
-                                        config.apiKey = newValue
-                                    }
-
-                                    Button(action: { showingAPIKey.toggle() }) {
-                                        Image(systemName: showingAPIKey ? "eye.slash" : "eye")
-                                            .foregroundColor(.gray)
-                                    }
-                                    .buttonStyle(.plain)
                                 }
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 220)
+                                .onChange(of: apiKeyInput) { newValue in
+                                    config.apiKey = newValue
+                                }
+
+                                Button(action: { showingAPIKey.toggle() }) {
+                                    Image(systemName: showingAPIKey ? "eye.slash" : "eye")
+                                        .foregroundColor(.secondary)
+                                }
+                                .buttonStyle(.borderless)
                             }
                         }
                     }
 
-                    // Models Section
-                    settingsSection {
-                        settingsRow(label: "Chat Model") {
+                    settingsRow(label: "Connection") {
+                        HStack(spacing: 12) {
+                            if let result = verificationResult {
+                                switch result {
+                                case .success(let message):
+                                    Label(message, systemImage: "checkmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.green)
+                                case .failure(let message):
+                                    Label(message, systemImage: "xmark.circle.fill")
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                        .lineLimit(1)
+                                        .frame(maxWidth: 150)
+                                }
+                            }
+
+                            Button(action: verifyConnection) {
+                                HStack(spacing: 6) {
+                                    if isVerifying {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                            .scaleEffect(0.7)
+                                    }
+                                    Text(isVerifying ? "Verifying..." : "Verify")
+                                }
+                                .frame(width: 80)
+                            }
+                            .disabled(isVerifying || (config.provider.requiresAPIKey && apiKeyInput.isEmpty))
+                        }
+                    }
+                }
+
+                // Models Section
+                settingsSection("Models") {
+                    settingsRow(label: "Chat Model") {
+                        modelPicker(
+                            selection: $config.chatModel,
+                            models: config.provider.availableChatModels,
+                            showCustomInput: $showCustomChatInput,
+                            customValue: $customChatModel
+                        )
+                    }
+
+                    if config.provider.supportsImageGeneration {
+                        settingsRow(label: "Image Model") {
                             modelPicker(
-                                selection: $config.chatModel,
-                                models: config.provider.availableChatModels,
-                                showCustomInput: $showCustomChatInput,
-                                customValue: $customChatModel
+                                selection: $config.imageModel,
+                                models: config.provider.availableImageModels,
+                                showCustomInput: $showCustomImageInput,
+                                customValue: $customImageModel
                             )
                         }
 
-                        if config.provider.supportsImageGeneration {
-                            settingsRow(label: "Image Model") {
-                                modelPicker(
-                                    selection: $config.imageModel,
-                                    models: config.provider.availableImageModels,
-                                    showCustomInput: $showCustomImageInput,
-                                    customValue: $customImageModel
-                                )
-                            }
-
-                            settingsRow(label: "Image Generation") {
-                                Toggle("", isOn: $config.imageGenerationEnabled)
-                                    .toggleStyle(.switch)
-                                    .labelsHidden()
-                            }
+                        settingsRow(label: "Image Generation") {
+                            Toggle("", isOn: $config.imageGenerationEnabled)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
                         }
                     }
-
-                    // Connection Section
-                    settingsSection {
-                        HStack {
-                            Text("Connection")
-                                .foregroundColor(.gray)
-                                .frame(width: 140, alignment: .trailing)
-
-                            Spacer()
-
-                            HStack(spacing: 12) {
-                                if let result = verificationResult {
-                                    switch result {
-                                    case .success(let message):
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "checkmark.circle.fill")
-                                                .foregroundColor(.green)
-                                            Text(message)
-                                                .foregroundColor(.green)
-                                        }
-                                        .font(.caption)
-                                    case .failure(let message):
-                                        HStack(spacing: 4) {
-                                            Image(systemName: "xmark.circle.fill")
-                                                .foregroundColor(.red)
-                                            Text(message)
-                                                .foregroundColor(.red)
-                                                .lineLimit(1)
-                                        }
-                                        .font(.caption)
-                                        .frame(maxWidth: 180)
-                                    }
-                                }
-
-                                Button(action: verifyConnection) {
-                                    HStack(spacing: 6) {
-                                        if isVerifying {
-                                            ProgressView()
-                                                .controlSize(.small)
-                                                .scaleEffect(0.7)
-                                        }
-                                        Text(isVerifying ? "Verifying..." : "Verify")
-                                    }
-                                    .frame(width: 80)
-                                }
-                                .buttonStyle(.bordered)
-                                .disabled(isVerifying || (config.provider.requiresAPIKey && apiKeyInput.isEmpty))
-                            }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                    }
-
-                    // Status indicators
-                    settingsSection {
-                        statusRow(label: "Vision Support", enabled: config.provider.supportsVision)
-                        statusRow(label: "Image Generation", enabled: config.provider.supportsImageGeneration)
-                        statusRow(label: "API Key Required", enabled: config.provider.requiresAPIKey)
-                    }
-
-                    // Reset
-                    HStack {
-                        Spacer()
-                        Button(action: {
-                            config.resetToDefaults()
-                            apiKeyInput = ""
-                            verificationResult = nil
-                        }) {
-                            Text("Reset to Defaults")
-                                .foregroundColor(.red.opacity(0.8))
-                        }
-                        .buttonStyle(.plain)
-                        Spacer()
-                    }
-                    .padding(.top, 8)
                 }
-                .padding(24)
+
+                // Capabilities Section
+                settingsSection("Capabilities") {
+                    statusRow(label: "Vision Support", enabled: config.provider.supportsVision)
+                    statusRow(label: "Image Generation", enabled: config.provider.supportsImageGeneration)
+                    statusRow(label: "API Key Required", enabled: config.provider.requiresAPIKey)
+                }
+
+                // Reset
+                HStack {
+                    Spacer()
+                    Button(action: {
+                        config.resetToDefaults()
+                        apiKeyInput = ""
+                        verificationResult = nil
+                    }) {
+                        Text("Reset to Defaults")
+                    }
+                    .foregroundColor(.red)
+                    Spacer()
+                }
+                .padding(.top, 8)
             }
+            .padding(20)
         }
-        .frame(width: 520, height: 560)
-        .background(backgroundColor)
-        .preferredColorScheme(.dark)
+        .frame(width: 450, height: 480)
         .onAppear {
             apiKeyInput = config.apiKey
         }
     }
 
-    // MARK: - Title Bar
-
-    private var titleBar: some View {
-        ZStack {
-            Text("Settings")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(.white)
-
-            HStack {
-                Spacer()
-                Button("Done") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(backgroundColor)
-    }
-
     // MARK: - Components
 
-    private func settingsSection<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(spacing: 0) {
-            content()
+    private func settingsSection<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(title)
+                .font(.headline)
+                .padding(.bottom, 8)
+
+            VStack(spacing: 0) {
+                content()
+            }
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
         }
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(white: 0.15))
-        )
     }
 
     private func settingsRow<Content: View>(label: String, @ViewBuilder content: () -> Content) -> some View {
         HStack {
             Text(label)
-                .foregroundColor(.gray)
-                .frame(width: 140, alignment: .trailing)
+                .foregroundColor(.secondary)
+                .frame(width: 120, alignment: .trailing)
 
             Spacer()
 
             content()
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .padding(.vertical, 10)
     }
 
     private func statusRow(label: String, enabled: Bool) -> some View {
         HStack {
             Text(label)
-                .foregroundColor(.gray)
-                .frame(width: 140, alignment: .trailing)
+                .foregroundColor(.secondary)
+                .frame(width: 120, alignment: .trailing)
 
             Spacer()
 
@@ -258,12 +202,11 @@ struct SettingsView: View {
                     .fill(enabled ? Color.green : Color.gray.opacity(0.4))
                     .frame(width: 8, height: 8)
                 Text(enabled ? "Yes" : "No")
-                    .foregroundColor(enabled ? .white : .gray)
-                    .font(.system(size: 13))
+                    .foregroundColor(enabled ? .primary : .secondary)
             }
-            .frame(width: 280, alignment: .leading)
+            .frame(width: 260, alignment: .leading)
         }
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 16)
         .padding(.vertical, 8)
     }
 
@@ -277,12 +220,8 @@ struct SettingsView: View {
             if showCustomInput.wrappedValue {
                 HStack(spacing: 8) {
                     TextField("Enter model name", text: customValue)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(rowBackgroundColor)
-                        .cornerRadius(6)
-                        .frame(width: 220)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 180)
                         .onSubmit {
                             if !customValue.wrappedValue.isEmpty {
                                 selection.wrappedValue = customValue.wrappedValue
@@ -296,7 +235,6 @@ struct SettingsView: View {
                         }
                         showCustomInput.wrappedValue = false
                     }
-                    .buttonStyle(.bordered)
                     .controlSize(.small)
                 }
             } else {
@@ -308,12 +246,11 @@ struct SettingsView: View {
                     Text("Custom...").tag("__custom__")
                 }
                 .labelsHidden()
-                .frame(width: 280)
+                .frame(width: 260)
                 .onChange(of: selection.wrappedValue) { newValue in
                     if newValue == "__custom__" {
                         customValue.wrappedValue = ""
                         showCustomInput.wrappedValue = true
-                        // Reset to first model temporarily
                         if let first = models.first {
                             selection.wrappedValue = first
                         }
