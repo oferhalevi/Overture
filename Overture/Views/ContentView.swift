@@ -3,9 +3,14 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject private var appState: AppState
 
+    // Track transition state
+    @State private var isTransitioning: Bool = false
+    @State private var showTrackInfo: Bool = true
+    @State private var showFacts: Bool = true
+
     // Track whether we have content to show
     private var hasContent: Bool {
-        !appState.facts.isEmpty
+        !appState.facts.isEmpty && showFacts
     }
 
     var body: some View {
@@ -90,10 +95,24 @@ struct ContentView: View {
                 isPlaying: appState.currentTrack?.isPlaying ?? false,
                 labelImage: appState.vinylLabel,
                 isGeneratingLabel: appState.isGeneratingLabel,
-                trackId: appState.currentTrack?.id
+                trackId: appState.currentTrack?.id,
+                onTransitionStart: {
+                    // Fade out text when transition starts
+                    withAnimation(.easeOut(duration: 0.25)) {
+                        showTrackInfo = false
+                        showFacts = false
+                    }
+                },
+                onTransitionEnd: {
+                    // Fade in text when transition ends
+                    withAnimation(.easeIn(duration: 0.3)) {
+                        showTrackInfo = true
+                        showFacts = true
+                    }
+                }
             )
 
-            // Track info
+            // Track info - with fade animation
             if let track = appState.currentTrack {
                 VStack(alignment: .leading, spacing: layout.trackInfoLineSpacing) {
                     Text(track.name)
@@ -115,6 +134,7 @@ struct ContentView: View {
                     }
                 }
                 .frame(maxWidth: layout.trackInfoWidth, alignment: .leading)
+                .opacity(showTrackInfo ? 1.0 : 0.0)
             }
 
             Spacer()

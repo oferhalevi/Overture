@@ -34,7 +34,13 @@ struct AlbumArtView: View {
     let isGeneratingLabel: Bool
     let trackId: String?
 
+    // Callback when transition starts - parent should hide text
+    var onTransitionStart: (() -> Void)?
+    // Callback when transition ends - parent can show new text
+    var onTransitionEnd: (() -> Void)?
+
     @State private var rotation: Double = 0
+    @State private var rotationSpeed: Double = 1.0  // For spin down effect
     @State private var isAnimating = false
     @State private var revealState: VinylRevealState = .hidden
     @State private var previousTrackId: String?
@@ -60,13 +66,15 @@ struct AlbumArtView: View {
         coverSize + vinylOffset
     }
 
-    init(artwork: NSImage?, size: CGFloat, isPlaying: Bool, labelImage: NSImage? = nil, isGeneratingLabel: Bool = false, trackId: String? = nil) {
+    init(artwork: NSImage?, size: CGFloat, isPlaying: Bool, labelImage: NSImage? = nil, isGeneratingLabel: Bool = false, trackId: String? = nil, onTransitionStart: (() -> Void)? = nil, onTransitionEnd: (() -> Void)? = nil) {
         self.artwork = artwork
         self.size = size
         self.isPlaying = isPlaying
         self.labelImage = labelImage
         self.isGeneratingLabel = isGeneratingLabel
         self.trackId = trackId
+        self.onTransitionStart = onTransitionStart
+        self.onTransitionEnd = onTransitionEnd
     }
 
     var body: some View {
@@ -146,39 +154,66 @@ struct AlbumArtView: View {
     }
 
     private func animateTrackTransition(completion: @escaping () -> Void) {
-        // Phase 1: Slide entire unit (disc + cover) out to the left
-        transitionPhase = .exitingCover
-        withAnimation(.easeIn(duration: 0.45)) {
-            coverOffsetX = -size * 1.8
-            coverOpacity = 0.0
+        // Phase 0: Notify parent to hide text first
+        transitionPhase = .exitingDisc
+        onTransitionStart?()
+
+        // Phase 1: Spin down the disc (slow to stop) - happens concurrently with text fade
+        stopRotation()
+
+        // Phase 2: After text has faded, slide disc back into cover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeInOut(duration: 0.4)) {
+                revealState = .hidden
+            }
         }
 
-        // Phase 2: Switch artwork and position unit on right (no animation)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) {
+        // Phase 3: Slide entire unit out to the left
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            transitionPhase = .exitingCover
+            withAnimation(.easeIn(duration: 0.4)) {
+                coverOffsetX = -size * 1.5
+                coverOpacity = 0.0
+            }
+        }
+
+        // Phase 4: Switch artwork and position unit on right (no animation)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) {
             completion()  // Switch to new artwork
-            revealState = .hidden  // Reset disc to hidden for new track
             coverOffsetX = size * 1.5
             coverOpacity = 1.0
             transitionPhase = .enteringCover
         }
 
-        // Phase 3: Slide entire unit in from the right
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // Phase 5: Slide entire unit in from the right
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.15) {
             withAnimation(.spring(response: 0.6, dampingFraction: 0.8)) {
                 coverOffsetX = 0
             }
         }
 
-        // Phase 4: Slide disc out from cover
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+        // Phase 6: Slide disc out from cover
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.55) {
             transitionPhase = .enteringDisc
             withAnimation(.spring(response: 0.8, dampingFraction: 0.7)) {
                 revealState = .partial
             }
+            // Restart rotation
+            startRotation()
+        }
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                transitionPhase = .idle
-            }
+        // Phase 7: Notify parent transition is complete
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            transitionPhase = .idle
+            onTransitionEnd?()
+        }
+    }
+
+    private func stopRotation() {
+        // Stop the repeating animation by resetting
+        isAnimating = false
+        withAnimation(.easeOut(duration: 0.5)) {
+            // The rotation will coast to a stop
         }
     }
 
