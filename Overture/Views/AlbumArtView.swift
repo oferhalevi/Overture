@@ -84,7 +84,7 @@ struct AlbumArtView: View {
 
                 // The entire disc+cover unit moves together during transitions
                 ZStack(alignment: .leading) {
-                    // Spinning vinyl record
+                    // Spinning vinyl record - hidden when fully inside cover
                     SpinningVinylView(
                         artwork: showingPreviousArtwork ? previousArtwork : artwork,
                         labelImage: showingPreviousArtwork ? nil : labelImage,
@@ -93,6 +93,7 @@ struct AlbumArtView: View {
                         isGeneratingLabel: showingPreviousArtwork ? false : isGeneratingLabel
                     )
                     .offset(x: coverSize * 0.02 + vinylOffset)
+                    .opacity(revealState == .hidden ? 0 : 1)
 
                     // Album cover
                     AlbumCoverView(
