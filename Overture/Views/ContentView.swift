@@ -8,6 +8,9 @@ struct ContentView: View {
     @State private var showTrackInfo: Bool = true
     @State private var showFacts: Bool = true
 
+    // Store displayed track info to avoid showing new track during exit animation
+    @State private var displayedTrack: Track?
+
     // Track whether we have content to show
     private var hasContent: Bool {
         !appState.facts.isEmpty && showFacts
@@ -75,9 +78,16 @@ struct ContentView: View {
         .ignoresSafeArea()
         .onAppear {
             appState.start()
+            displayedTrack = appState.currentTrack
         }
         .onDisappear {
             appState.stop()
+        }
+        .onChange(of: appState.currentTrack?.id) { _ in
+            // Initialize displayedTrack on first track (when no transition happens)
+            if displayedTrack == nil {
+                displayedTrack = appState.currentTrack
+            }
         }
         .background(KeyboardHandlerView { event in
             handleKeyPress(event)
@@ -115,14 +125,15 @@ struct ContentView: View {
                 isGeneratingLabel: appState.isGeneratingLabel,
                 trackId: appState.currentTrack?.id,
                 onTransitionStart: {
-                    // Fade out text when transition starts
+                    // Fade out text when transition starts (keep showing old track info)
                     withAnimation(.easeOut(duration: 0.25)) {
                         showTrackInfo = false
                         showFacts = false
                     }
                 },
                 onTransitionEnd: {
-                    // Fade in text when transition ends
+                    // Update displayed track to new track, then fade in
+                    displayedTrack = appState.currentTrack
                     withAnimation(.easeIn(duration: 0.3)) {
                         showTrackInfo = true
                         showFacts = true
@@ -136,8 +147,8 @@ struct ContentView: View {
                 }
             )
 
-            // Track info - with fade animation
-            if let track = appState.currentTrack {
+            // Track info - with fade animation, uses displayedTrack to avoid flash during transition
+            if let track = displayedTrack ?? appState.currentTrack {
                 VStack(alignment: .leading, spacing: layout.trackInfoLineSpacing) {
                     Text(track.name)
                         .font(.system(size: layout.trackTitleSize, weight: .semibold, design: .serif))
