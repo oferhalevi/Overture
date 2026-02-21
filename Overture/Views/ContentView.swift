@@ -475,7 +475,7 @@ class MultiColumnTextNSView: NSView {
 
         let headerFontSize = fontSize * 0.65
         let lineSpacing = fontSize * 0.12
-        let paragraphSpacing = fontSize * 0.15
+        let paragraphSpacing = fontSize * 0.5  // Bottom margin after paragraphs
         let sectionGap = fontSize * 1.2
 
         // Fonts
