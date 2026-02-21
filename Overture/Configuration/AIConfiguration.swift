@@ -119,7 +119,10 @@ class AIConfiguration: ObservableObject {
     // MARK: - Computed Properties
 
     var chatCompletionsEndpoint: String {
-        "\(endpoint)/chat/completions"
+        if provider == .anthropic {
+            return "\(endpoint)/messages"
+        }
+        return "\(endpoint)/chat/completions"
     }
 
     var imageGenerationsEndpoint: String {

@@ -41,31 +41,43 @@ actor AIService {
             throw AIServiceError.invalidEndpoint
         }
 
-        var requestBody: [String: Any] = [
-            "model": config.chatModel,
-            "messages": messages,
-            "temperature": temperature,
-            "max_tokens": maxTokens
-        ]
-
-        // Add API key header for providers that need it
+        var requestBody: [String: Any]
         var headers: [String: String] = [
             "Content-Type": "application/json"
         ]
 
-        if config.provider.requiresAPIKey {
+        if config.provider == .anthropic {
+            // Anthropic Messages API format
             let apiKey = config.apiKey
             guard !apiKey.isEmpty else {
                 throw AIServiceError.missingAPIKey
             }
 
-            switch config.provider {
-            case .anthropic:
-                headers["x-api-key"] = apiKey
-                headers["anthropic-version"] = "2023-06-01"
-                // Anthropic uses slightly different format
-                requestBody["model"] = config.chatModel
-            default:
+            headers["x-api-key"] = apiKey
+            headers["anthropic-version"] = "2023-06-01"
+
+            requestBody = [
+                "model": config.chatModel,
+                "max_tokens": maxTokens,
+                "messages": messages
+            ]
+            if temperature != 1.0 {
+                requestBody["temperature"] = temperature
+            }
+        } else {
+            // OpenAI-compatible format
+            requestBody = [
+                "model": config.chatModel,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": maxTokens
+            ]
+
+            if config.provider.requiresAPIKey {
+                let apiKey = config.apiKey
+                guard !apiKey.isEmpty else {
+                    throw AIServiceError.missingAPIKey
+                }
                 headers["Authorization"] = "Bearer \(apiKey)"
             }
         }
@@ -89,16 +101,27 @@ actor AIService {
             throw AIServiceError.apiError(statusCode: httpResponse.statusCode, message: errorBody)
         }
 
-        // Parse response
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let choices = json["choices"] as? [[String: Any]],
-              let firstChoice = choices.first,
-              let message = firstChoice["message"] as? [String: Any],
-              let content = message["content"] as? String else {
-            throw AIServiceError.parseError
+        // Parse response based on provider
+        if config.provider == .anthropic {
+            // Anthropic returns: { "content": [{ "type": "text", "text": "..." }] }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let content = json["content"] as? [[String: Any]],
+                  let firstBlock = content.first,
+                  let text = firstBlock["text"] as? String else {
+                throw AIServiceError.parseError
+            }
+            return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        } else {
+            // OpenAI returns: { "choices": [{ "message": { "content": "..." } }] }
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let choices = json["choices"] as? [[String: Any]],
+                  let firstChoice = choices.first,
+                  let message = firstChoice["message"] as? [String: Any],
+                  let content = message["content"] as? String else {
+                throw AIServiceError.parseError
+            }
+            return content.trimmingCharacters(in: .whitespacesAndNewlines)
         }
-
-        return content.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     // MARK: - Vision (Image Analysis)
@@ -121,15 +144,35 @@ actor AIService {
 
         let base64Image = jpegData.base64EncodedString()
 
-        let messages: [[String: Any]] = [
-            [
-                "role": "user",
-                "content": [
-                    ["type": "text", "text": prompt],
-                    ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(base64Image)"]]
+        let messages: [[String: Any]]
+
+        if config.provider == .anthropic {
+            // Anthropic vision format
+            messages = [
+                [
+                    "role": "user",
+                    "content": [
+                        ["type": "image", "source": [
+                            "type": "base64",
+                            "media_type": "image/jpeg",
+                            "data": base64Image
+                        ]],
+                        ["type": "text", "text": prompt]
+                    ]
                 ]
             ]
-        ]
+        } else {
+            // OpenAI vision format
+            messages = [
+                [
+                    "role": "user",
+                    "content": [
+                        ["type": "text", "text": prompt],
+                        ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(base64Image)"]]
+                    ]
+                ]
+            ]
+        }
 
         return try await chatCompletion(messages: messages, maxTokens: maxTokens)
     }
